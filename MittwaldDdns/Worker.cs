@@ -8,32 +8,42 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
     private static readonly HttpClient HttpClient = new();
     private readonly Dictionary<string, MittwaldV1> _v1Clients = new(StringComparer.Ordinal);
     private readonly Dictionary<string, MittwaldV2> _v2Clients = new(StringComparer.Ordinal);
+    private readonly Lock _configLock = new();
+    private ConfigModel _activeConfig = new();
+    private FileSystemWatcher? _configWatcher;
+    private CancellationTokenSource? _reloadDebounce;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var encSecret = Environment.GetEnvironmentVariable("MITTWALD_SECRET")
-            ?? throw new InvalidOperationException("MITTWALD_SECRET environment variable not set");
-        var configPath = Environment.GetEnvironmentVariable("MITTWALD_CONFIG_PATH") ?? "~/.mittwald_config.json";
+        var encSecret = Environment.GetEnvironmentVariable("MITTWALD_SECRET");
+        var configPath = Environment.GetEnvironmentVariable("MITTWALD_CONFIG_PATH")
+            ?? ConfigStore.DefaultConfigPath;
 
-        var config = new Config(configPath, encSecret);
-        var delay = config.ConfigModel.Timeout > TimeSpan.Zero
-            ? config.ConfigModel.Timeout
-            : TimeSpan.FromMinutes(5);
+        var configStore = new ConfigStore(configPath, encSecret);
+        var loadedConfig = configStore.LoadRequired().Config;
+        ConfigValidator.ThrowIfInvalid(loadedConfig);
+        SetActiveConfig(loadedConfig);
+        StartConfigWatcher(configStore, stoppingToken);
 
         logger.LogInformation(
             "Mittwald DDNS worker started. ConfigPath: {ConfigPath}; Domains: {DomainCount}; Interval: {Interval}",
-            config.ConfigPath,
-            config.ConfigModel.Domains.Count,
-            delay);
+            configStore.ConfigPath,
+            CountDomains(loadedConfig),
+            loadedConfig.Timeout);
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            var config = GetActiveConfig();
+            var delay = config.Timeout > TimeSpan.Zero
+                ? config.Timeout
+                : TimeSpan.FromMinutes(5);
+
             logger.LogInformation("Mittwald DDNS check started at: {Time}", DateTimeOffset.Now);
 
             try
             {
                 var ipAddress = await GetCurrentIpAddressAsync(stoppingToken);
-                await UpdateDomainsAsync(config.ConfigModel, ipAddress, stoppingToken);
+                await UpdateDomainsAsync(config, ipAddress, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -52,45 +62,42 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
 
     private async Task UpdateDomainsAsync(ConfigModel config, IPAddress ipAddress, CancellationToken cancellationToken)
     {
-        foreach (var domain in config.Domains)
+        foreach (var account in config.Accounts)
         {
-            var apiVersion = domain.ApiVersion != 0
-                ? domain.ApiVersion
-                : config.GlobalApiVersion != 0 ? config.GlobalApiVersion : 2;
-            var apiKey = string.IsNullOrWhiteSpace(domain.ApiKey)
-                ? config.ApiKey
-                : domain.ApiKey;
-
-            if (string.IsNullOrWhiteSpace(apiKey))
+            if (string.IsNullOrWhiteSpace(account.ApiKey))
             {
-                logger.LogError("Failed to update {Domain}: no API key is configured", domain.Domain);
+                logger.LogError("Skipping account {Account}: no API key is configured", account.Name);
                 continue;
             }
 
-            try
+            var apiVersion = account.ApiVersion ?? config.DefaultApiVersion;
+            foreach (var domain in account.Domains)
             {
-                if (apiVersion == 1)
+                try
                 {
-                    await UpdateV1DomainAsync(GetV1Client(apiKey), domain, ipAddress, cancellationToken);
-                }
-                else if (apiVersion == 2)
-                {
-                    await UpdateV2DomainAsync(GetV2Client(apiKey), domain, ipAddress, cancellationToken);
-                }
-                else
-                {
-                    throw new InvalidOperationException($"Unsupported Mittwald API version: {apiVersion}");
-                }
+                    if (apiVersion == 1)
+                    {
+                        await UpdateV1DomainAsync(GetV1Client(account.ApiKey), account, domain, ipAddress, cancellationToken);
+                    }
+                    else if (apiVersion == 2)
+                    {
+                        await UpdateV2DomainAsync(GetV2Client(account.ApiKey), domain, ipAddress, cancellationToken);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Unsupported Mittwald API version: {apiVersion}");
+                    }
 
-                logger.LogInformation(
-                    "Updated {Domain} with {IpAddress} by Mittwald API v{ApiVersion}",
-                    domain.Domain,
-                    ipAddress,
-                    apiVersion);
-            }
-            catch (Exception exception)
-            {
-                logger.LogError(exception, "Failed to update {Domain}", domain.Domain);
+                    logger.LogInformation(
+                        "Updated {Domain} with {IpAddress} by Mittwald API v{ApiVersion}",
+                        domain.Domain,
+                        ipAddress,
+                        apiVersion);
+                }
+                catch (Exception exception)
+                {
+                    logger.LogError(exception, "Failed to update {Domain}", domain.Domain);
+                }
             }
         }
     }
@@ -119,13 +126,14 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
 
     private static Task UpdateV1DomainAsync(
         MittwaldV1 client,
+        ConfigAccount account,
         ConfigDomain domain,
         IPAddress ipAddress,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(domain.Id))
+        if (string.IsNullOrWhiteSpace(account.Name))
         {
-            throw new InvalidOperationException($"Domain {domain.Domain} has no v1 account id.");
+            throw new InvalidOperationException($"Domain {domain.Domain} has no v1 account identifier.");
         }
 
         if (string.IsNullOrWhiteSpace(domain.Domain))
@@ -133,7 +141,7 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
             throw new InvalidOperationException("A v1 domain needs a domain name.");
         }
 
-        return client.UpdateTargetAsync(domain.Id, domain.Domain, ipAddress, cancellationToken);
+        return client.UpdateTargetAsync(account.Name, domain.Domain, ipAddress, cancellationToken);
     }
 
     private static async Task UpdateV2DomainAsync(
@@ -176,5 +184,92 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
 
         var response = await HttpClient.GetStringAsync(ipServiceUrl, cancellationToken);
         return IPAddress.Parse(response.Trim());
+    }
+
+    private void StartConfigWatcher(ConfigStore configStore, CancellationToken stoppingToken)
+    {
+        var directory = Path.GetDirectoryName(configStore.ConfigPath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            directory = Directory.GetCurrentDirectory();
+        }
+
+        Directory.CreateDirectory(directory);
+
+        _configWatcher = new FileSystemWatcher(directory, Path.GetFileName(configStore.ConfigPath))
+        {
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
+            EnableRaisingEvents = true
+        };
+
+        _configWatcher.Changed += (_, _) => QueueConfigReload(configStore, stoppingToken);
+        _configWatcher.Created += (_, _) => QueueConfigReload(configStore, stoppingToken);
+        _configWatcher.Renamed += (_, _) => QueueConfigReload(configStore, stoppingToken);
+    }
+
+    private void QueueConfigReload(ConfigStore configStore, CancellationToken stoppingToken)
+    {
+        var previousDebounce = Interlocked.Exchange(
+            ref _reloadDebounce,
+            CancellationTokenSource.CreateLinkedTokenSource(stoppingToken));
+        previousDebounce?.Cancel();
+        previousDebounce?.Dispose();
+
+        var debounce = _reloadDebounce;
+        if (debounce is null)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(500), debounce.Token);
+                var loadedConfig = configStore.LoadRequired().Config;
+                ConfigValidator.ThrowIfInvalid(loadedConfig);
+                SetActiveConfig(loadedConfig);
+
+                logger.LogInformation(
+                    "Reloaded config. Domains: {DomainCount}; Interval: {Interval}",
+                    CountDomains(loadedConfig),
+                    loadedConfig.Timeout);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(exception, "Config reload failed. Keeping previous valid config.");
+            }
+        }, CancellationToken.None);
+    }
+
+    private ConfigModel GetActiveConfig()
+    {
+        lock (_configLock)
+        {
+            return _activeConfig;
+        }
+    }
+
+    private void SetActiveConfig(ConfigModel config)
+    {
+        lock (_configLock)
+        {
+            _activeConfig = config;
+        }
+    }
+
+    private static int CountDomains(ConfigModel config)
+    {
+        return config.Accounts.Sum(account => account.Domains.Count);
+    }
+
+    public override void Dispose()
+    {
+        _configWatcher?.Dispose();
+        _reloadDebounce?.Dispose();
+        base.Dispose();
     }
 }

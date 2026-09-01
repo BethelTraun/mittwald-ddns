@@ -8,6 +8,11 @@ if (LoginCommand.TryCreate(args, out var loginCommand) && loginCommand is not nu
     return await loginCommand.RunAsync();
 }
 
+if (ConfigCommand.TryCreate(args, out var configCommand) && configCommand is not null)
+{
+    return await configCommand.RunAsync();
+}
+
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddHostedService<Worker>();
 
