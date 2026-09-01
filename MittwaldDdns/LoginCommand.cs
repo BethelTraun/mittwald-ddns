@@ -28,7 +28,7 @@ public sealed class LoginCommand
 
     public async Task<int> RunAsync(CancellationToken cancellationToken = default)
     {
-        var apiVersion = _options.ApiVersion == 1 ? 1 : 2;
+        var apiVersion = PromptMissingApiVersion();
         var description = string.IsNullOrWhiteSpace(_options.Description)
             ? "mittwald-ddns"
             : _options.Description;
@@ -89,6 +89,30 @@ public sealed class LoginCommand
                 description,
                 _options.ExpiresAt ?? DateTimeOffset.UtcNow.AddYears(1),
                 cancellationToken);
+    }
+
+    private int PromptMissingApiVersion()
+    {
+        if (_options.ApiVersion is not null)
+        {
+            return _options.ApiVersion.Value;
+        }
+
+        while (true)
+        {
+            var value = Prompt("API version (1 or 2) [2]: ");
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return 2;
+            }
+
+            if (int.TryParse(value, out var apiVersion) && apiVersion is 1 or 2)
+            {
+                return apiVersion;
+            }
+
+            Console.Error.WriteLine("Please enter 1 or 2.");
+        }
     }
 
     private string PromptMissingUser(int apiVersion)
@@ -163,7 +187,7 @@ public sealed class LoginCommand
 public sealed record LoginOptions
 {
     public bool Login { get; private init; }
-    public int ApiVersion { get; private init; } = 2;
+    public int? ApiVersion { get; private init; }
     public string? Username { get; private init; }
     public string? Email { get; private init; }
     public string? Password { get; private init; }
@@ -182,6 +206,7 @@ public sealed record LoginOptions
 
             options = arg switch
             {
+                "login" => options with { Login = true },
                 "--login" => options with { Login = true },
                 "--api-version" => options with { ApiVersion = ParseApiVersion(ReadValue(args, ref index), arg) },
                 "--v1" => options with { ApiVersion = 1 },
@@ -238,7 +263,7 @@ public sealed record LoginOptions
     {
         if (!int.TryParse(RequireValue(value, option), out var apiVersion) || apiVersion is not (1 or 2))
         {
-            throw new ArgumentException("--api-version must be 1 or 2.");
+            throw new ArgumentException($"{option} must be 1 or 2.");
         }
 
         return apiVersion;
