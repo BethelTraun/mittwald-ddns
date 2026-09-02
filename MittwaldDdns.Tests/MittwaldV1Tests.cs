@@ -1,0 +1,97 @@
+using System.Net;
+using MittwaldDdns.API;
+
+namespace MittwaldDdns.Tests;
+
+public sealed class MittwaldV1Tests
+{
+    [Fact]
+    public async Task UpdateTargetAsync_SendsJsonBodiesWithoutCharset()
+    {
+        var contentTypes = new List<string?>();
+        var charsets = new List<string?>();
+
+        using var httpClient = new HttpClient(new StubHandler(async request =>
+        {
+            if (request.Content is not null)
+            {
+                contentTypes.Add(request.Content.Headers.ContentType?.MediaType);
+                charsets.Add(request.Content.Headers.ContentType?.CharSet);
+                await request.Content.ReadAsStringAsync();
+            }
+
+            return request.RequestUri?.AbsolutePath switch
+            {
+                "/v1/authenticate" => JsonResponse(
+                    """{"token":"session-token","expires":"2099-01-01T00:00:00Z"}"""),
+                "/v1/accounts/account-1/dns/42" => new HttpResponseMessage(HttpStatusCode.OK),
+                _ => new HttpResponseMessage(HttpStatusCode.NotFound)
+            };
+        }));
+
+        var client = new MittwaldV1(httpClient, "token-id:token-secret");
+
+        await client.UpdateTargetAsync("account-1", "42", IPAddress.Parse("203.0.113.10"));
+
+        Assert.Equal(["application/json", "application/json"], contentTypes);
+        Assert.Equal([null, null], charsets);
+    }
+
+    [Fact]
+    public async Task CreateApiKeyAsync_SendsJsonBodiesWithoutCharset()
+    {
+        var contentTypes = new List<string?>();
+        var charsets = new List<string?>();
+
+        using var httpClient = new HttpClient(new StubHandler(async request =>
+        {
+            if (request.Content is not null)
+            {
+                contentTypes.Add(request.Content.Headers.ContentType?.MediaType);
+                charsets.Add(request.Content.Headers.ContentType?.CharSet);
+                await request.Content.ReadAsStringAsync();
+            }
+
+            return request.RequestUri?.AbsolutePath switch
+            {
+                "/v1/authenticate" => JsonResponse(
+                    """{"token":"session-token","expires":"2099-01-01T00:00:00Z"}"""),
+                "/v1/authentication/tokens" => JsonResponse(
+                    """{"uuid":"created-id","token":"created-secret","description":"mittwald-ddns"}""",
+                    HttpStatusCode.Created),
+                _ => new HttpResponseMessage(HttpStatusCode.NotFound)
+            };
+        }));
+
+        var apiKey = await MittwaldV1.CreateApiKeyAsync(
+            httpClient,
+            "account-1",
+            "password",
+            null,
+            null,
+            "mittwald-ddns");
+
+        Assert.Equal("created-id:created-secret", apiKey);
+        Assert.Equal(["application/json", "application/json"], contentTypes);
+        Assert.Equal([null, null], charsets);
+    }
+
+    private static HttpResponseMessage JsonResponse(string json, HttpStatusCode statusCode = HttpStatusCode.OK)
+    {
+        return new HttpResponseMessage(statusCode)
+        {
+            Content = new StringContent(json)
+        };
+    }
+
+    private sealed class StubHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler)
+        : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            return handler(request);
+        }
+    }
+}

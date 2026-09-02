@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace MittwaldDdns.API;
@@ -92,7 +93,7 @@ public sealed class MittwaldV1
 
         var request = new HttpRequestMessage(HttpMethod.Post, new Uri(BaseUri, "authentication/tokens"))
         {
-            Content = JsonContent.Create(new V1CreateApplicationTokenRequest(description))
+            Content = CreateJsonContent(new V1CreateApplicationTokenRequest(description))
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Token);
 
@@ -118,7 +119,7 @@ public sealed class MittwaldV1
         request.Headers.Authorization =
             new AuthenticationHeaderValue("Bearer", await GetBearerTokenAsync(cancellationToken));
 
-        if (body is not null) request.Content = JsonContent.Create(body);
+        if (body is not null) request.Content = CreateJsonContent(body);
 
         var response = await _httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken: cancellationToken);
@@ -155,9 +156,11 @@ public sealed class MittwaldV1
         ArgumentException.ThrowIfNullOrWhiteSpace(username);
         ArgumentException.ThrowIfNullOrWhiteSpace(password);
 
-        var request = new V1AuthenticateRequest(username, password, multiFactorCode, deviceId);
-        using var response =
-            await httpClient.PostAsJsonAsync(new Uri(BaseUri, "authenticate"), request, cancellationToken);
+        var request = new HttpRequestMessage(HttpMethod.Post, new Uri(BaseUri, "authenticate"))
+        {
+            Content = CreateJsonContent(new V1AuthenticateRequest(username, password, multiFactorCode, deviceId))
+        };
+        using var response = await httpClient.SendAsync(request, cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.Accepted)
         {
@@ -173,6 +176,13 @@ public sealed class MittwaldV1
                     ?? throw new InvalidOperationException("Mittwald returned an empty login response.");
 
         return V1AuthenticationResult.Success(token.Token, token.Expires);
+    }
+
+    private static HttpContent CreateJsonContent(object body)
+    {
+        var content = new ByteArrayContent(JsonSerializer.SerializeToUtf8Bytes(body));
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        return content;
     }
 
     private static async Task EnsureSuccessAsync(
