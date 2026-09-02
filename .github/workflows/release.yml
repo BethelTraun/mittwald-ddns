@@ -20,10 +20,12 @@ jobs:
         include:
           - os: ubuntu-latest
             rid: linux-x64
-            archive: tar.gz
+            executable: mittwald-ddns
+            asset: mittwald-ddns-linux-x64
           - os: windows-latest
             rid: win-x64
-            archive: zip
+            executable: mittwald-ddns.exe
+            asset: mittwald-ddns-win-x64.exe
 
     steps:
       - name: Checkout
@@ -47,35 +49,30 @@ jobs:
             -p:DebugType=None `
             -p:DebugSymbols=false
 
-      - name: Package
+      - name: Prepare release file
         shell: pwsh
         run: |
           $rid = "${{ matrix.rid }}"
-          $name = "mittwald-ddns-$rid"
+          $source = "publish/$rid/${{ matrix.executable }}"
+          $asset = "dist/${{ matrix.asset }}"
           New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item $source $asset -Force
 
-          if ("${{ matrix.archive }}" -eq "zip") {
-            $asset = "dist/$name.zip"
-            Compress-Archive -Path "publish/$rid/*" -DestinationPath $asset -Force
-          } else {
-            $asset = "dist/$name.tar.gz"
-            tar -czf $asset -C "publish/$rid" .
+          if ($IsLinux) {
+            chmod +x $asset
           }
-
-          $hash = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $(Split-Path $asset -Leaf)" | Set-Content "$asset.sha256" -NoNewline
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: mittwald-ddns-${{ matrix.rid }}
-          path: dist/*
+          path: dist/${{ matrix.asset }}
 
       - name: Upload GitHub release assets
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: dist/${{ matrix.asset }}
 
   container:
     name: Publish container image
