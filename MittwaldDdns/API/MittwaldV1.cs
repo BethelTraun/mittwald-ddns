@@ -8,9 +8,9 @@ namespace MittwaldDdns.API;
 public sealed class MittwaldV1
 {
     private static readonly Uri BaseUri = new("https://api.mittwald.de/v1/");
+    private readonly string _apiKey;
 
     private readonly HttpClient _httpClient;
-    private readonly string _apiKey;
     private string? _cachedToken;
     private DateTimeOffset _cachedTokenExpires;
 
@@ -31,11 +31,11 @@ public sealed class MittwaldV1
         using var response = await SendAsync(
             HttpMethod.Get,
             $"accounts/{Uri.EscapeDataString(accountIdentifier)}/domains?limit=100&offset=0",
-            body: null,
+            null,
             cancellationToken);
 
         return await response.Content.ReadFromJsonAsync<List<V1Domain>>(cancellationToken)
-            ?? [];
+               ?? [];
     }
 
     public async Task<IReadOnlyList<V1DnsDomain>> GetDnsOverviewAsync(
@@ -47,11 +47,11 @@ public sealed class MittwaldV1
         using var response = await SendAsync(
             HttpMethod.Get,
             $"accounts/{Uri.EscapeDataString(accountIdentifier)}/dns",
-            body: null,
+            null,
             cancellationToken);
 
         return await response.Content.ReadFromJsonAsync<List<V1DnsDomain>>(cancellationToken)
-            ?? [];
+               ?? [];
     }
 
     public async Task UpdateTargetAsync(
@@ -88,9 +88,7 @@ public sealed class MittwaldV1
             cancellationToken);
 
         if (session.SecondFactor is not null)
-        {
             throw new MittwaldSecondFactorRequiredException(session.SecondFactor.DeviceId);
-        }
 
         var request = new HttpRequestMessage(HttpMethod.Post, new Uri(BaseUri, "authentication/tokens"))
         {
@@ -102,12 +100,10 @@ public sealed class MittwaldV1
         await EnsureSuccessAsync(response, HttpStatusCode.Created, cancellationToken);
 
         var createdToken = await response.Content.ReadFromJsonAsync<V1ApplicationTokenResponse>(cancellationToken)
-            ?? throw new InvalidOperationException("Mittwald returned an empty token response.");
+                           ?? throw new InvalidOperationException("Mittwald returned an empty token response.");
 
         if (string.IsNullOrWhiteSpace(createdToken.Uuid) || string.IsNullOrWhiteSpace(createdToken.Token))
-        {
             throw new InvalidOperationException("Mittwald did not return a usable application token.");
-        }
 
         return $"{createdToken.Uuid}:{createdToken.Token}";
     }
@@ -119,12 +115,10 @@ public sealed class MittwaldV1
         CancellationToken cancellationToken)
     {
         var request = new HttpRequestMessage(method, new Uri(BaseUri, relativeUrl));
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetBearerTokenAsync(cancellationToken));
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", await GetBearerTokenAsync(cancellationToken));
 
-        if (body is not null)
-        {
-            request.Content = JsonContent.Create(body);
-        }
+        if (body is not null) request.Content = JsonContent.Create(body);
 
         var response = await _httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken: cancellationToken);
@@ -133,24 +127,17 @@ public sealed class MittwaldV1
 
     private async Task<string> GetBearerTokenAsync(CancellationToken cancellationToken)
     {
-        if (!_apiKey.Contains(':', StringComparison.Ordinal))
-        {
-            return _apiKey;
-        }
+        if (!_apiKey.Contains(':', StringComparison.Ordinal)) return _apiKey;
 
         if (!string.IsNullOrWhiteSpace(_cachedToken)
             && _cachedTokenExpires > DateTimeOffset.UtcNow.AddMinutes(1))
-        {
             return _cachedToken;
-        }
 
         var split = _apiKey.Split(':', 2);
         var session = await AuthenticateAsync(_httpClient, split[0], split[1], null, null, cancellationToken);
 
         if (session.SecondFactor is not null)
-        {
             throw new InvalidOperationException("The stored v1 application token requires a second factor.");
-        }
 
         _cachedToken = session.Token;
         _cachedTokenExpires = session.Expires;
@@ -169,12 +156,13 @@ public sealed class MittwaldV1
         ArgumentException.ThrowIfNullOrWhiteSpace(password);
 
         var request = new V1AuthenticateRequest(username, password, multiFactorCode, deviceId);
-        using var response = await httpClient.PostAsJsonAsync(new Uri(BaseUri, "authenticate"), request, cancellationToken);
+        using var response =
+            await httpClient.PostAsJsonAsync(new Uri(BaseUri, "authenticate"), request, cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.Accepted)
         {
             var secondFactor = await response.Content.ReadFromJsonAsync<V1SecondFactorResponse>(cancellationToken)
-                ?? new V1SecondFactorResponse("TOTP", null);
+                               ?? new V1SecondFactorResponse("TOTP", null);
 
             return V1AuthenticationResult.RequiresSecondFactor(secondFactor);
         }
@@ -182,7 +170,7 @@ public sealed class MittwaldV1
         await EnsureSuccessAsync(response, cancellationToken: cancellationToken);
 
         var token = await response.Content.ReadFromJsonAsync<V1AuthenticationResponse>(cancellationToken)
-            ?? throw new InvalidOperationException("Mittwald returned an empty login response.");
+                    ?? throw new InvalidOperationException("Mittwald returned an empty login response.");
 
         return V1AuthenticationResult.Success(token.Token, token.Expires);
     }
@@ -192,10 +180,8 @@ public sealed class MittwaldV1
         HttpStatusCode? expectedStatusCode = null,
         CancellationToken cancellationToken = default)
     {
-        if (response.IsSuccessStatusCode && (expectedStatusCode is null || response.StatusCode == expectedStatusCode))
-        {
-            return;
-        }
+        if (response.IsSuccessStatusCode &&
+            (expectedStatusCode is null || response.StatusCode == expectedStatusCode)) return;
 
         var content = await response.Content.ReadAsStringAsync(cancellationToken);
         throw new HttpRequestException(
@@ -205,15 +191,20 @@ public sealed class MittwaldV1
 
 public sealed record V1Domain(
     [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("fullname")] string FullName,
+    [property: JsonPropertyName("fullname")]
+    string FullName,
     [property: JsonPropertyName("tld")] string Tld,
-    [property: JsonPropertyName("registryStatus")] string? RegistryStatus);
+    [property: JsonPropertyName("registryStatus")]
+    string? RegistryStatus);
 
 public sealed record V1DnsDomain(
     [property: JsonPropertyName("uid")] long Uid,
-    [property: JsonPropertyName("fullName")] string FullName,
-    [property: JsonPropertyName("domainName")] string DomainName,
-    [property: JsonPropertyName("records")] V1DnsRecords Records);
+    [property: JsonPropertyName("fullName")]
+    string FullName,
+    [property: JsonPropertyName("domainName")]
+    string DomainName,
+    [property: JsonPropertyName("records")]
+    V1DnsRecords Records);
 
 public sealed record V1DnsRecords(
     [property: JsonPropertyName("A")] IReadOnlyList<V1DnsRecord> A,
@@ -226,7 +217,8 @@ public sealed record V1DnsRecord(
     [property: JsonPropertyName("host")] string Host,
     [property: JsonPropertyName("value")] string Value,
     [property: JsonPropertyName("ttl")] int Ttl,
-    [property: JsonPropertyName("priority")] int Priority);
+    [property: JsonPropertyName("priority")]
+    int Priority);
 
 public sealed class MittwaldSecondFactorRequiredException(string? deviceId)
     : Exception("Mittwald requires a second factor.")
@@ -235,26 +227,34 @@ public sealed class MittwaldSecondFactorRequiredException(string? deviceId)
 }
 
 internal sealed record V1AuthenticateRequest(
-    [property: JsonPropertyName("username")] string Username,
-    [property: JsonPropertyName("password")] string Password,
-    [property: JsonPropertyName("multiFactorCode")] string? MultiFactorCode,
-    [property: JsonPropertyName("deviceId")] string? DeviceId);
+    [property: JsonPropertyName("username")]
+    string Username,
+    [property: JsonPropertyName("password")]
+    string Password,
+    [property: JsonPropertyName("multiFactorCode")]
+    string? MultiFactorCode,
+    [property: JsonPropertyName("deviceId")]
+    string? DeviceId);
 
 internal sealed record V1AuthenticationResponse(
     [property: JsonPropertyName("token")] string Token,
-    [property: JsonPropertyName("expires")] DateTimeOffset Expires);
+    [property: JsonPropertyName("expires")]
+    DateTimeOffset Expires);
 
 internal sealed record V1SecondFactorResponse(
     [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("deviceId")] string? DeviceId);
+    [property: JsonPropertyName("deviceId")]
+    string? DeviceId);
 
 internal sealed record V1CreateApplicationTokenRequest(
-    [property: JsonPropertyName("description")] string Description);
+    [property: JsonPropertyName("description")]
+    string Description);
 
 internal sealed record V1ApplicationTokenResponse(
     [property: JsonPropertyName("uuid")] string Uuid,
     [property: JsonPropertyName("token")] string Token,
-    [property: JsonPropertyName("description")] string? Description);
+    [property: JsonPropertyName("description")]
+    string? Description);
 
 internal sealed record V1UpdateDnsRequest(
     [property: JsonPropertyName("target")] string Target);

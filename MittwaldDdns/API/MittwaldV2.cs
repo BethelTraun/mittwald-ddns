@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text.Json.Serialization;
 
 namespace MittwaldDdns.API;
@@ -8,9 +9,9 @@ namespace MittwaldDdns.API;
 public sealed class MittwaldV2
 {
     private static readonly Uri BaseUri = new("https://api.mittwald.de/v2/");
+    private readonly string _apiKey;
 
     private readonly HttpClient _httpClient;
-    private readonly string _apiKey;
 
     public MittwaldV2(HttpClient httpClient, string apiKey)
     {
@@ -22,10 +23,10 @@ public sealed class MittwaldV2
 
     public async Task<IReadOnlyList<V2Domain>> ListDomainsAsync(CancellationToken cancellationToken = default)
     {
-        using var response = await SendAsync(HttpMethod.Get, "domains", body: null, cancellationToken);
+        using var response = await SendAsync(HttpMethod.Get, "domains", null, cancellationToken);
 
         return await response.Content.ReadFromJsonAsync<List<V2Domain>>(cancellationToken)
-            ?? [];
+               ?? [];
     }
 
     public async Task<IReadOnlyList<V2DnsZone>> ListDnsZonesAsync(
@@ -37,11 +38,11 @@ public sealed class MittwaldV2
         using var response = await SendAsync(
             HttpMethod.Get,
             $"projects/{Uri.EscapeDataString(projectId)}/dns-zones",
-            body: null,
+            null,
             cancellationToken);
 
         return await response.Content.ReadFromJsonAsync<List<V2DnsZone>>(cancellationToken)
-            ?? [];
+               ?? [];
     }
 
     public async Task UpdateARecordSetAsync(
@@ -51,7 +52,7 @@ public sealed class MittwaldV2
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dnsZoneId);
 
-        var request = ipAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
+        var request = ipAddress.AddressFamily == AddressFamily.InterNetworkV6
             ? V2UpdateARecordSetRequest.ForIpv6(ipAddress.ToString())
             : V2UpdateARecordSetRequest.ForIpv4(ipAddress.ToString());
 
@@ -73,10 +74,7 @@ public sealed class MittwaldV2
     {
         var session = await AuthenticateAsync(httpClient, email, password, multiFactorCode, cancellationToken);
 
-        if (session.SecondFactorRequired)
-        {
-            throw new MittwaldSecondFactorRequiredException(null);
-        }
+        if (session.SecondFactorRequired) throw new MittwaldSecondFactorRequiredException(null);
 
         var request = new HttpRequestMessage(HttpMethod.Post, new Uri(BaseUri, "users/self/api-tokens"))
         {
@@ -91,12 +89,10 @@ public sealed class MittwaldV2
         await EnsureSuccessAsync(response, HttpStatusCode.Created, cancellationToken);
 
         var createdToken = await response.Content.ReadFromJsonAsync<V2CreateApiTokenResponse>(cancellationToken)
-            ?? throw new InvalidOperationException("Mittwald returned an empty token response.");
+                           ?? throw new InvalidOperationException("Mittwald returned an empty token response.");
 
         if (string.IsNullOrWhiteSpace(createdToken.Token))
-        {
             throw new InvalidOperationException("Mittwald did not return a usable API token.");
-        }
 
         return createdToken.Token;
     }
@@ -110,10 +106,7 @@ public sealed class MittwaldV2
         var request = new HttpRequestMessage(method, new Uri(BaseUri, relativeUrl));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
 
-        if (body is not null)
-        {
-            request.Content = JsonContent.Create(body);
-        }
+        if (body is not null) request.Content = JsonContent.Create(body);
 
         var response = await _httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken: cancellationToken);
@@ -137,15 +130,12 @@ public sealed class MittwaldV2
         var request = new V2AuthenticateRequest(email, password, multiFactorCode);
         using var response = await httpClient.PostAsJsonAsync(new Uri(BaseUri, path), request, cancellationToken);
 
-        if (response.StatusCode == HttpStatusCode.Accepted)
-        {
-            return V2AuthenticationResult.RequiresSecondFactor();
-        }
+        if (response.StatusCode == HttpStatusCode.Accepted) return V2AuthenticationResult.RequiresSecondFactor();
 
         await EnsureSuccessAsync(response, cancellationToken: cancellationToken);
 
         var token = await response.Content.ReadFromJsonAsync<V2AuthenticationResponse>(cancellationToken)
-            ?? throw new InvalidOperationException("Mittwald returned an empty login response.");
+                    ?? throw new InvalidOperationException("Mittwald returned an empty login response.");
 
         return V2AuthenticationResult.Success(token.Token, token.Expires);
     }
@@ -155,10 +145,8 @@ public sealed class MittwaldV2
         HttpStatusCode? expectedStatusCode = null,
         CancellationToken cancellationToken = default)
     {
-        if (response.IsSuccessStatusCode && (expectedStatusCode is null || response.StatusCode == expectedStatusCode))
-        {
-            return;
-        }
+        if (response.IsSuccessStatusCode &&
+            (expectedStatusCode is null || response.StatusCode == expectedStatusCode)) return;
 
         var content = await response.Content.ReadAsStringAsync(cancellationToken);
         throw new HttpRequestException(
@@ -167,18 +155,23 @@ public sealed class MittwaldV2
 }
 
 public sealed record V2Domain(
-    [property: JsonPropertyName("domainId")] string DomainId,
+    [property: JsonPropertyName("domainId")]
+    string DomainId,
     [property: JsonPropertyName("domain")] string Domain,
-    [property: JsonPropertyName("projectId")] string ProjectId,
-    [property: JsonPropertyName("connected")] bool Connected);
+    [property: JsonPropertyName("projectId")]
+    string ProjectId,
+    [property: JsonPropertyName("connected")]
+    bool Connected);
 
 public sealed record V2DnsZone(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("domain")] string Domain,
-    [property: JsonPropertyName("recordSet")] V2DnsRecordSet RecordSet);
+    [property: JsonPropertyName("recordSet")]
+    V2DnsRecordSet RecordSet);
 
 public sealed record V2DnsRecordSet(
-    [property: JsonPropertyName("combinedARecords")] V2CombinedARecords? CombinedARecords,
+    [property: JsonPropertyName("combinedARecords")]
+    V2CombinedARecords? CombinedARecords,
     [property: JsonPropertyName("cname")] object? CName,
     [property: JsonPropertyName("mx")] object? Mx,
     [property: JsonPropertyName("txt")] object? Txt,
@@ -191,17 +184,23 @@ public sealed record V2CombinedARecords(
 
 internal sealed record V2AuthenticateRequest(
     [property: JsonPropertyName("email")] string Email,
-    [property: JsonPropertyName("password")] string Password,
-    [property: JsonPropertyName("multiFactorCode")] string? MultiFactorCode);
+    [property: JsonPropertyName("password")]
+    string Password,
+    [property: JsonPropertyName("multiFactorCode")]
+    string? MultiFactorCode);
 
 internal sealed record V2AuthenticationResponse(
     [property: JsonPropertyName("token")] string Token,
-    [property: JsonPropertyName("refreshToken")] string RefreshToken,
-    [property: JsonPropertyName("expires")] DateTimeOffset Expires);
+    [property: JsonPropertyName("refreshToken")]
+    string RefreshToken,
+    [property: JsonPropertyName("expires")]
+    DateTimeOffset Expires);
 
 internal sealed record V2CreateApiTokenRequest(
-    [property: JsonPropertyName("description")] string Description,
-    [property: JsonPropertyName("expiresAt")] DateTimeOffset ExpiresAt,
+    [property: JsonPropertyName("description")]
+    string Description,
+    [property: JsonPropertyName("expiresAt")]
+    DateTimeOffset ExpiresAt,
     [property: JsonPropertyName("roles")] IReadOnlyList<string> Roles);
 
 internal sealed record V2CreateApiTokenResponse(
@@ -210,7 +209,8 @@ internal sealed record V2CreateApiTokenResponse(
 internal sealed record V2UpdateARecordSetRequest(
     [property: JsonPropertyName("a")] IReadOnlyList<string> A,
     [property: JsonPropertyName("aaaa")] IReadOnlyList<string> Aaaa,
-    [property: JsonPropertyName("settings")] V2RecordSettings Settings)
+    [property: JsonPropertyName("settings")]
+    V2RecordSettings Settings)
 {
     public static V2UpdateARecordSetRequest ForIpv4(string ipAddress)
     {

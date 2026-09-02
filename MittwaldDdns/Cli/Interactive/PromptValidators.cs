@@ -47,10 +47,7 @@ public static class PromptValidators
     public static bool TryParseShortTimeSpan(string input, out TimeSpan value)
     {
         value = default;
-        if (input.Length < 2 || !double.TryParse(input[..^1], out var amount) || amount <= 0)
-        {
-            return false;
-        }
+        if (input.Length < 2 || !double.TryParse(input[..^1], out var amount) || amount <= 0) return false;
 
         value = char.ToLowerInvariant(input[^1]) switch
         {

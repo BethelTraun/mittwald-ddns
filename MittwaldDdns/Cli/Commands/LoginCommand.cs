@@ -7,8 +7,8 @@ namespace MittwaldDdns.Cli.Commands;
 
 public sealed class LoginCommand : AsyncCommand<LoginSettings>
 {
-    private readonly HttpClient _httpClient;
     private readonly IAnsiConsole _console;
+    private readonly HttpClient _httpClient;
 
     public LoginCommand()
         : this(new HttpClient(), CliConsole.Error)
@@ -56,9 +56,7 @@ public sealed class LoginCommand : AsyncCommand<LoginSettings>
         catch (MittwaldSecondFactorRequiredException exception)
         {
             if (!string.IsNullOrWhiteSpace(exception.DeviceId))
-            {
                 _console.MarkupLineInterpolated($"Device id: {exception.DeviceId}");
-            }
 
             var multiFactorCode = PromptRequired("MFA code:");
             var apiKey = await CreateApiKeyAsync(
@@ -86,7 +84,8 @@ public sealed class LoginCommand : AsyncCommand<LoginSettings>
         CancellationToken cancellationToken)
     {
         return apiVersion == 1
-            ? MittwaldV1.CreateApiKeyAsync(_httpClient, username, password, multiFactorCode, deviceId, description, cancellationToken)
+            ? MittwaldV1.CreateApiKeyAsync(_httpClient, username, password, multiFactorCode, deviceId, description,
+                cancellationToken)
             : MittwaldV2.CreateApiKeyAsync(
                 _httpClient,
                 username,
@@ -100,10 +99,10 @@ public sealed class LoginCommand : AsyncCommand<LoginSettings>
     private int PromptMissingApiVersion(LoginSettings settings)
     {
         var choice = _console.Prompt(
-                new SelectionPrompt<ApiVersionChoice>()
-                    .Title("API version")
-                    .AddChoices(ApiVersionChoice.V2, ApiVersionChoice.V1)
-                    .UseConverter(PromptLabels.ApiVersionLabel));
+            new SelectionPrompt<ApiVersionChoice>()
+                .Title("API version")
+                .AddChoices(ApiVersionChoice.V2, ApiVersionChoice.V1)
+                .UseConverter(PromptLabels.ApiVersionLabel));
         return choice == ApiVersionChoice.V1 ? 1 : 2;
     }
 
@@ -146,23 +145,19 @@ public sealed class LoginSettings : CommandSettings
     [CommandOption("--api-version <VERSION>")]
     public int? ApiVersion { get; init; }
 
-    [CommandOption("--v1")]
-    public bool V1 { get; init; }
+    [CommandOption("--v1")] public bool V1 { get; init; }
 
-    [CommandOption("--v2")]
-    public bool V2 { get; init; }
+    [CommandOption("--v2")] public bool V2 { get; init; }
 
     [CommandOption("--username <USERNAME>")]
     public string? Username { get; init; }
 
-    [CommandOption("--email <EMAIL>")]
-    public string? Email { get; init; }
+    [CommandOption("--email <EMAIL>")] public string? Email { get; init; }
 
     [CommandOption("--password <PASSWORD>")]
     public string? Password { get; init; }
 
-    [CommandOption("--mfa <CODE>")]
-    public string? MultiFactorCode { get; init; }
+    [CommandOption("--mfa <CODE>")] public string? MultiFactorCode { get; init; }
 
     [CommandOption("--device-id <DEVICE_ID>")]
     public string? DeviceId { get; init; }
@@ -177,15 +172,9 @@ public sealed class LoginSettings : CommandSettings
     {
         get
         {
-            if (V1)
-            {
-                return 1;
-            }
+            if (V1) return 1;
 
-            if (V2)
-            {
-                return 2;
-            }
+            if (V2) return 2;
 
             return ApiVersion;
         }
@@ -194,15 +183,10 @@ public sealed class LoginSettings : CommandSettings
     public override ValidationResult Validate()
     {
         var selectedCount = (ApiVersion is null ? 0 : 1) + (V1 ? 1 : 0) + (V2 ? 1 : 0);
-        if (selectedCount > 1)
-        {
-            return ValidationResult.Error("Use only one of --api-version, --v1, or --v2.");
-        }
+        if (selectedCount > 1) return ValidationResult.Error("Use only one of --api-version, --v1, or --v2.");
 
         if (ApiVersion is not null && !ConfigValidator.IsSupportedApiVersion(ApiVersion.Value))
-        {
             return ValidationResult.Error("--api-version must be 1 or 2.");
-        }
 
         return ValidationResult.Success();
     }

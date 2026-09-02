@@ -6,9 +6,9 @@ namespace MittwaldDdns;
 public class Worker(ILogger<Worker> logger) : BackgroundService
 {
     private static readonly HttpClient HttpClient = new();
+    private readonly Lock _configLock = new();
     private readonly Dictionary<string, MittwaldV1> _v1Clients = new(StringComparer.Ordinal);
     private readonly Dictionary<string, MittwaldV2> _v2Clients = new(StringComparer.Ordinal);
-    private readonly Lock _configLock = new();
     private ConfigModel _activeConfig = new();
     private FileSystemWatcher? _configWatcher;
     private CancellationTokenSource? _reloadDebounce;
@@ -17,7 +17,7 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
     {
         var encSecret = Environment.GetEnvironmentVariable("MITTWALD_SECRET");
         var configPath = Environment.GetEnvironmentVariable("MITTWALD_CONFIG_PATH")
-            ?? ConfigStore.DefaultConfigPath;
+                         ?? ConfigStore.DefaultConfigPath;
 
         var configStore = new ConfigStore(configPath, encSecret);
         var loadedConfig = configStore.LoadRequired().Config;
@@ -72,21 +72,15 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
 
             var apiVersion = account.ApiVersion ?? config.DefaultApiVersion;
             foreach (var domain in account.Domains)
-            {
                 try
                 {
                     if (apiVersion == 1)
-                    {
-                        await UpdateV1DomainAsync(GetV1Client(account.ApiKey), account, domain, ipAddress, cancellationToken);
-                    }
+                        await UpdateV1DomainAsync(GetV1Client(account.ApiKey), account, domain, ipAddress,
+                            cancellationToken);
                     else if (apiVersion == 2)
-                    {
                         await UpdateV2DomainAsync(GetV2Client(account.ApiKey), domain, ipAddress, cancellationToken);
-                    }
                     else
-                    {
                         throw new InvalidOperationException($"Unsupported Mittwald API version: {apiVersion}");
-                    }
 
                     logger.LogInformation(
                         "Updated {Domain} with {IpAddress} by Mittwald API v{ApiVersion}",
@@ -98,7 +92,6 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
                 {
                     logger.LogError(exception, "Failed to update {Domain}", domain.Domain);
                 }
-            }
         }
     }
 
@@ -132,14 +125,10 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(account.Name))
-        {
             throw new InvalidOperationException($"Domain {domain.Domain} has no v1 account identifier.");
-        }
 
         if (string.IsNullOrWhiteSpace(domain.Domain))
-        {
             throw new InvalidOperationException("A v1 domain needs a domain name.");
-        }
 
         return client.UpdateTargetAsync(account.Name, domain.Domain, ipAddress, cancellationToken);
     }
@@ -152,9 +141,7 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
     {
         var dnsZoneId = domain.Id;
         if (string.IsNullOrWhiteSpace(dnsZoneId))
-        {
             dnsZoneId = await ResolveV2DnsZoneIdAsync(client, domain, cancellationToken);
-        }
 
         await client.UpdateARecordSetAsync(dnsZoneId, ipAddress, cancellationToken);
     }
@@ -165,22 +152,21 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(domain.ProjectId))
-        {
             throw new InvalidOperationException($"Domain {domain.Domain} has no v2 DNS zone id or project id.");
-        }
 
         var zones = await client.ListDnsZonesAsync(domain.ProjectId, cancellationToken);
         var zone = zones.FirstOrDefault(candidate =>
             string.Equals(candidate.Domain, domain.Domain, StringComparison.OrdinalIgnoreCase));
 
         return zone?.Id
-            ?? throw new InvalidOperationException($"No DNS zone found for {domain.Domain} in project {domain.ProjectId}.");
+               ?? throw new InvalidOperationException(
+                   $"No DNS zone found for {domain.Domain} in project {domain.ProjectId}.");
     }
 
     private static async Task<IPAddress> GetCurrentIpAddressAsync(CancellationToken cancellationToken)
     {
         var ipServiceUrl = Environment.GetEnvironmentVariable("MITTWALD_IP_SERVICE_URL")
-            ?? "https://api64.ipify.org";
+                           ?? "https://api64.ipify.org";
 
         var response = await HttpClient.GetStringAsync(ipServiceUrl, cancellationToken);
         return IPAddress.Parse(response.Trim());
@@ -189,16 +175,14 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
     private void StartConfigWatcher(ConfigStore configStore, CancellationToken stoppingToken)
     {
         var directory = Path.GetDirectoryName(configStore.ConfigPath);
-        if (string.IsNullOrWhiteSpace(directory))
-        {
-            directory = Directory.GetCurrentDirectory();
-        }
+        if (string.IsNullOrWhiteSpace(directory)) directory = Directory.GetCurrentDirectory();
 
         Directory.CreateDirectory(directory);
 
         _configWatcher = new FileSystemWatcher(directory, Path.GetFileName(configStore.ConfigPath))
         {
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size |
+                           NotifyFilters.CreationTime,
             EnableRaisingEvents = true
         };
 
@@ -216,10 +200,7 @@ public class Worker(ILogger<Worker> logger) : BackgroundService
         previousDebounce?.Dispose();
 
         var debounce = _reloadDebounce;
-        if (debounce is null)
-        {
-            return;
-        }
+        if (debounce is null) return;
 
         _ = Task.Run(async () =>
         {

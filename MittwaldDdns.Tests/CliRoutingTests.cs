@@ -1,4 +1,3 @@
-using MittwaldDdns;
 using MittwaldDdns.Cli.Commands;
 using Spectre.Console.Cli;
 
@@ -60,7 +59,9 @@ public sealed class CliRoutingTests
         var app = new CommandApp();
         app.SetDefaultCommand<ProbeDaemonCommand>();
         app.Configure(config =>
-            CliApplication.Configure<ProbeLoginCommand, ProbeConfigCommand, ProbeConfigExportCommand, ProbeConfigSaveCommand>(config));
+            CliApplication
+                .Configure<ProbeLoginCommand, ProbeConfigCommand, ProbeConfigExportCommand,
+                    ProbeConfigSaveCommand>(config));
         return app;
     }
 
@@ -74,7 +75,8 @@ public sealed class CliRoutingTests
 
     private sealed class ProbeLoginCommand : Command<LoginSettings>
     {
-        protected override int Execute(CommandContext context, LoginSettings settings, CancellationToken cancellationToken)
+        protected override int Execute(CommandContext context, LoginSettings settings,
+            CancellationToken cancellationToken)
         {
             return 20;
         }
@@ -82,7 +84,8 @@ public sealed class CliRoutingTests
 
     private sealed class ProbeConfigCommand : Command<ConfigSettings>
     {
-        protected override int Execute(CommandContext context, ConfigSettings settings, CancellationToken cancellationToken)
+        protected override int Execute(CommandContext context, ConfigSettings settings,
+            CancellationToken cancellationToken)
         {
             return 30;
         }
@@ -90,7 +93,8 @@ public sealed class CliRoutingTests
 
     private sealed class ProbeConfigExportCommand : Command<ConfigExportSettings>
     {
-        protected override int Execute(CommandContext context, ConfigExportSettings settings, CancellationToken cancellationToken)
+        protected override int Execute(CommandContext context, ConfigExportSettings settings,
+            CancellationToken cancellationToken)
         {
             return 40;
         }
@@ -98,7 +102,8 @@ public sealed class CliRoutingTests
 
     private sealed class ProbeConfigSaveCommand : Command<ConfigSaveSettings>
     {
-        protected override int Execute(CommandContext context, ConfigSaveSettings settings, CancellationToken cancellationToken)
+        protected override int Execute(CommandContext context, ConfigSaveSettings settings,
+            CancellationToken cancellationToken)
         {
             return string.Equals(settings.File, "config.json", StringComparison.Ordinal) ? 50 : 51;
         }

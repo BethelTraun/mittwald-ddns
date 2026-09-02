@@ -6,9 +6,9 @@ namespace MittwaldDdns.Cli.Interactive;
 
 public sealed class ConfigWorkspace
 {
-    private readonly ConfigStore _store;
-    private readonly HttpClient _httpClient;
     private readonly IAnsiConsole _console;
+    private readonly HttpClient _httpClient;
+    private readonly ConfigStore _store;
 
     public ConfigWorkspace(ConfigStore store, HttpClient httpClient, IAnsiConsole console)
     {
@@ -63,10 +63,7 @@ public sealed class ConfigWorkspace
                     break;
                 case MainMenuAction.Exit:
                 case MainMenuAction.ExitWithoutSaving:
-                    if (!dirty || _console.Confirm("Exit without saving changes?", defaultValue: false))
-                    {
-                        return 0;
-                    }
+                    if (!dirty || _console.Confirm("Exit without saving changes?", false)) return 0;
 
                     break;
             }
@@ -109,7 +106,8 @@ public sealed class ConfigWorkspace
 
             var choices = new List<MenuOption<AccountMenuSelection>>
             {
-                new(new AccountMenuSelection(AccountMenuAction.AddAccount), PromptLabels.AccountMenuLabel(AccountMenuAction.AddAccount))
+                new(new AccountMenuSelection(AccountMenuAction.AddAccount),
+                    PromptLabels.AccountMenuLabel(AccountMenuAction.AddAccount))
             };
             choices.AddRange(config.Accounts.Select(account =>
                 new MenuOption<AccountMenuSelection>(
@@ -126,10 +124,7 @@ public sealed class ConfigWorkspace
 
             if (selected.Value.Action == AccountMenuAction.AddAccount)
             {
-                if (await AddAccountAsync(config, cancellationToken))
-                {
-                    return true;
-                }
+                if (await AddAccountAsync(config, cancellationToken)) return true;
             }
             else if (selected.Value.Action == AccountMenuAction.Back)
             {
@@ -161,14 +156,11 @@ public sealed class ConfigWorkspace
             ApiKey = PromptSecret("API key:")
         };
 
-        var selectedApiVersion = PromptApiVersion("API version to use for domain discovery", includeAccountSetting: false);
+        var selectedApiVersion = PromptApiVersion("API version to use for domain discovery", false);
         account.ApiVersion = selectedApiVersion.UseGlobal ? null : selectedApiVersion.ApiVersion;
         var discoveryVersion = ResolveApiVersion(config, account, selectedApiVersion);
 
-        if (!await ValidateApiKeyAsync(account, discoveryVersion, cancellationToken))
-        {
-            return false;
-        }
+        if (!await ValidateApiKeyAsync(account, discoveryVersion, cancellationToken)) return false;
 
         account.Domains = await DiscoverDomainsWithFallbackAsync(config, account, discoveryVersion, cancellationToken);
         account.Webhook = EmptyToNull(PromptOptionalUrl("Webhook override (empty for global):"));
@@ -203,10 +195,7 @@ public sealed class ConfigWorkspace
             switch (selected)
             {
                 case AccountEditAction.ReplaceApiKey:
-                    if (await ReplaceApiKeyAsync(config, account, cancellationToken))
-                    {
-                        return true;
-                    }
+                    if (await ReplaceApiKeyAsync(config, account, cancellationToken)) return true;
 
                     break;
                 case AccountEditAction.RenameAccount:
@@ -218,14 +207,11 @@ public sealed class ConfigWorkspace
                     account.Webhook = EmptyToNull(PromptOptionalUrl("Webhook override (empty for global):"));
                     return true;
                 case AccountEditAction.ManageDomains:
-                    if (await ManageDomainsAsync(config, account, cancellationToken))
-                    {
-                        return true;
-                    }
+                    if (await ManageDomainsAsync(config, account, cancellationToken)) return true;
 
                     break;
                 case AccountEditAction.RemoveAccount:
-                    if (_console.Confirm($"Remove account '{Markup.Escape(account.Name)}' and all domains?", defaultValue: false))
+                    if (_console.Confirm($"Remove account '{Markup.Escape(account.Name)}' and all domains?", false))
                     {
                         config.Accounts.Remove(account);
                         return true;
@@ -244,7 +230,7 @@ public sealed class ConfigWorkspace
         CancellationToken cancellationToken)
     {
         var apiKey = PromptSecret("New API key:");
-        var selectedApiVersion = PromptApiVersion("API version to use for validation", includeAccountSetting: true);
+        var selectedApiVersion = PromptApiVersion("API version to use for validation", true);
         var apiVersion = ResolveApiVersion(config, account, selectedApiVersion);
 
         var draft = new ConfigAccount
@@ -256,10 +242,7 @@ public sealed class ConfigWorkspace
             Domains = account.Domains
         };
 
-        if (!await ValidateApiKeyAsync(draft, apiVersion, cancellationToken))
-        {
-            return false;
-        }
+        if (!await ValidateApiKeyAsync(draft, apiVersion, cancellationToken)) return false;
 
         account.ApiKey = apiKey;
         _console.MarkupLine("[green]API key replaced and validated.[/]");
@@ -270,7 +253,7 @@ public sealed class ConfigWorkspace
                 .UseConverter(value => value ? "Rediscover domains now" : "Keep existing domain list"));
         if (selected)
         {
-            var discovery = PromptApiVersion("API version to use for domain discovery", includeAccountSetting: true);
+            var discovery = PromptApiVersion("API version to use for domain discovery", true);
             account.Domains = await DiscoverDomainsWithFallbackAsync(
                 config,
                 account,
@@ -321,7 +304,7 @@ public sealed class ConfigWorkspace
             switch (selected)
             {
                 case DomainMenuAction.SyncFromMittwald:
-                    var selectedApiVersion = PromptApiVersion("API version to use for domain discovery", includeAccountSetting: true);
+                    var selectedApiVersion = PromptApiVersion("API version to use for domain discovery", true);
                     account.Domains = await DiscoverDomainsWithFallbackAsync(
                         config,
                         account,
@@ -383,10 +366,7 @@ public sealed class ConfigWorkspace
         }
 
         var domain = PromptDomain(account.Domains, "Domain to remove");
-        if (!_console.Confirm($"Remove domain '{Markup.Escape(domain.Domain)}'?", defaultValue: false))
-        {
-            return false;
-        }
+        if (!_console.Confirm($"Remove domain '{Markup.Escape(domain.Domain)}'?", false)) return false;
 
         account.Domains.Remove(domain);
         return true;
@@ -398,31 +378,23 @@ public sealed class ConfigWorkspace
         CancellationToken cancellationToken)
     {
         while (true)
-        {
             try
             {
                 if (apiVersion == 1)
-                {
-                    await new MittwaldV1(_httpClient, account.ApiKey).GetDnsOverviewAsync(account.Name, cancellationToken);
-                }
+                    await new MittwaldV1(_httpClient, account.ApiKey).GetDnsOverviewAsync(account.Name,
+                        cancellationToken);
                 else
-                {
                     await new MittwaldV2(_httpClient, account.ApiKey).ListDomainsAsync(cancellationToken);
-                }
 
                 return true;
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 _console.MarkupLine(Markup.Escape($"Mittwald API validation failed: {exception.Message}"));
-                if (!_console.Confirm("Retry API key validation?", defaultValue: false))
-                {
-                    return false;
-                }
+                if (!_console.Confirm("Retry API key validation?", false)) return false;
 
                 account.ApiKey = PromptSecret("API key:");
             }
-        }
     }
 
     private async Task<List<ConfigDomain>> DiscoverDomainsWithFallbackAsync(
@@ -443,10 +415,7 @@ public sealed class ConfigWorkspace
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             _console.MarkupLine(Markup.Escape($"Domain discovery failed: {exception.Message}"));
-            if (_console.Confirm("Add a domain manually?", defaultValue: false))
-            {
-                return [.. currentDomains ?? [], ReadManualDomain()];
-            }
+            if (_console.Confirm("Add a domain manually?", false)) return [.. currentDomains ?? [], ReadManualDomain()];
 
             return currentDomains?.ToList() ?? [];
         }
@@ -456,7 +425,8 @@ public sealed class ConfigWorkspace
         ConfigAccount account,
         CancellationToken cancellationToken)
     {
-        var domains = await new MittwaldV1(_httpClient, account.ApiKey).GetDnsOverviewAsync(account.Name, cancellationToken);
+        var domains =
+            await new MittwaldV1(_httpClient, account.ApiKey).GetDnsOverviewAsync(account.Name, cancellationToken);
 
         return domains
             .Select(domain => new ConfigDomain
@@ -522,22 +492,19 @@ public sealed class ConfigWorkspace
         }
 
         var current = currentDomains?.Select(domain => domain.Domain).ToHashSet(StringComparer.OrdinalIgnoreCase)
-            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                      ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var preselected = discovered
             .Where(domain => current.Count == 0 || current.Contains(domain.Domain))
             .ToList();
 
         var prompt = new MultiSelectionPrompt<ConfigDomain>()
-                .Title("Select domains to manage")
-                .NotRequired()
-                .InstructionsText("[grey](Press space to toggle, enter to accept)[/]")
-                .AddChoices(discovered)
-                .UseConverter(domain => domain.Domain);
+            .Title("Select domains to manage")
+            .NotRequired()
+            .InstructionsText("[grey](Press space to toggle, enter to accept)[/]")
+            .AddChoices(discovered)
+            .UseConverter(domain => domain.Domain);
 
-        foreach (var domain in preselected)
-        {
-            prompt.Select(domain);
-        }
+        foreach (var domain in preselected) prompt.Select(domain);
 
         return _console.Prompt(prompt);
     }
@@ -582,7 +549,7 @@ public sealed class ConfigWorkspace
     private ConfigModel? ImportPlainJson()
     {
         var file = PromptRequired("Plain JSON file:");
-        var loaded = ConfigStore.LoadFromFile(file, encryptionSecret: null);
+        var loaded = ConfigStore.LoadFromFile(file, null);
         if (loaded.Format != ConfigFileFormat.Plain)
         {
             _console.MarkupLine("[red]Interactive import expects plain JSON.[/]");
@@ -606,10 +573,7 @@ public sealed class ConfigWorkspace
                 .Title("Export destination")
                 .AddChoices(ExportDestination.Stdout, ExportDestination.File, ExportDestination.Back)
                 .UseConverter(PromptLabels.ExportDestinationLabel));
-        if (selected == ExportDestination.Back)
-        {
-            return;
-        }
+        if (selected == ExportDestination.Back) return;
 
         var json = JsonSerializer.Serialize(config, ConfigStore.JsonOptions);
         if (selected == ExportDestination.Stdout)
@@ -655,20 +619,14 @@ public sealed class ConfigWorkspace
             .AddColumn("API");
 
         if (config.Accounts.Count == 0)
-        {
             table.AddRow("No accounts configured yet.", string.Empty, string.Empty, string.Empty);
-        }
         else
-        {
             foreach (var account in config.Accounts)
-            {
                 table.AddRow(
                     Markup.Escape(account.Name),
                     account.Domains.Count.ToString(),
                     string.IsNullOrWhiteSpace(account.Webhook) ? "global" : "custom",
                     account.ApiVersion is null ? "global" : $"v{account.ApiVersion}");
-            }
-        }
 
         _console.Write(table);
     }
@@ -696,12 +654,10 @@ public sealed class ConfigWorkspace
             .AddColumn("Project");
 
         foreach (var domain in domains.OrderBy(domain => domain.Domain, StringComparer.OrdinalIgnoreCase))
-        {
             table.AddRow(
                 Markup.Escape(domain.Domain),
                 Markup.Escape(domain.Id),
                 string.IsNullOrWhiteSpace(domain.ProjectId) ? string.Empty : Markup.Escape(domain.ProjectId));
-        }
 
         _console.Write(table);
     }
@@ -717,16 +673,12 @@ public sealed class ConfigWorkspace
             .AddColumn("Webhook");
 
         foreach (var account in config.Accounts)
-        {
-            foreach (var domain in account.Domains)
-            {
-                table.AddRow(
-                    Markup.Escape(domain.Domain),
-                    Markup.Escape(account.Name),
-                    (account.ApiVersion ?? config.DefaultApiVersion).ToString(),
-                    WebhookSource(config, account));
-            }
-        }
+        foreach (var domain in account.Domains)
+            table.AddRow(
+                Markup.Escape(domain.Domain),
+                Markup.Escape(account.Name),
+                (account.ApiVersion ?? config.DefaultApiVersion).ToString(),
+                WebhookSource(config, account));
 
         _console.Write(table);
     }
@@ -737,25 +689,16 @@ public sealed class ConfigWorkspace
             .Title("Imported config is invalid")
             .AddColumn("Error");
 
-        foreach (var error in errors)
-        {
-            table.AddRow(Markup.Escape(error));
-        }
+        foreach (var error in errors) table.AddRow(Markup.Escape(error));
 
         _console.Write(table);
     }
 
     private int ResolveApiVersion(ConfigModel config, ConfigAccount account, ApiVersionSelection selection)
     {
-        if (selection.ApiVersion is not null)
-        {
-            return selection.ApiVersion.Value;
-        }
+        if (selection.ApiVersion is not null) return selection.ApiVersion.Value;
 
-        if (selection.UseAccountSetting && account.ApiVersion is not null)
-        {
-            return account.ApiVersion.Value;
-        }
+        if (selection.UseAccountSetting && account.ApiVersion is not null) return account.ApiVersion.Value;
 
         return config.DefaultApiVersion;
     }
@@ -778,7 +721,11 @@ public sealed class ConfigWorkspace
     private ApiVersionSelection PromptApiVersion(string title, bool includeAccountSetting)
     {
         var choices = includeAccountSetting
-            ? new[] { ApiVersionChoice.AccountSetting, ApiVersionChoice.GlobalDefault, ApiVersionChoice.V1, ApiVersionChoice.V2 }
+            ? new[]
+            {
+                ApiVersionChoice.AccountSetting, ApiVersionChoice.GlobalDefault, ApiVersionChoice.V1,
+                ApiVersionChoice.V2
+            }
             : [ApiVersionChoice.GlobalDefault, ApiVersionChoice.V1, ApiVersionChoice.V2];
 
         var selected = _console.Prompt(
@@ -789,11 +736,11 @@ public sealed class ConfigWorkspace
 
         return selected switch
         {
-            ApiVersionChoice.AccountSetting => new ApiVersionSelection(null, UseGlobal: false, UseAccountSetting: true),
-            ApiVersionChoice.GlobalDefault => new ApiVersionSelection(null, UseGlobal: true, UseAccountSetting: false),
-            ApiVersionChoice.V1 => new ApiVersionSelection(1, UseGlobal: false, UseAccountSetting: false),
-            ApiVersionChoice.V2 => new ApiVersionSelection(2, UseGlobal: false, UseAccountSetting: false),
-            _ => new ApiVersionSelection(null, UseGlobal: true, UseAccountSetting: false)
+            ApiVersionChoice.AccountSetting => new ApiVersionSelection(null, false, true),
+            ApiVersionChoice.GlobalDefault => new ApiVersionSelection(null, true, false),
+            ApiVersionChoice.V1 => new ApiVersionSelection(1, false, false),
+            ApiVersionChoice.V2 => new ApiVersionSelection(2, false, false),
+            _ => new ApiVersionSelection(null, true, false)
         };
     }
 
@@ -858,15 +805,9 @@ public sealed class ConfigWorkspace
 
     private static string WebhookSource(ConfigModel config, ConfigAccount account)
     {
-        if (!string.IsNullOrWhiteSpace(account.Webhook))
-        {
-            return "account override";
-        }
+        if (!string.IsNullOrWhiteSpace(account.Webhook)) return "account override";
 
-        if (!string.IsNullOrWhiteSpace(config.GlobalWebhook))
-        {
-            return "global";
-        }
+        if (!string.IsNullOrWhiteSpace(config.GlobalWebhook)) return "global";
 
         return "unset";
     }

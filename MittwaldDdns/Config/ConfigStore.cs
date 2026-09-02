@@ -34,10 +34,7 @@ public sealed class ConfigStore
 
     public ConfigModel? Load()
     {
-        if (!ExistsAndHasContent)
-        {
-            return null;
-        }
+        if (!ExistsAndHasContent) return null;
 
         return LoadFromFile(ConfigPath, _encryptionSecret).Config;
     }
@@ -45,9 +42,7 @@ public sealed class ConfigStore
     public LoadedConfig LoadRequired()
     {
         if (!ExistsAndHasContent)
-        {
             throw new FileNotFoundException($"Config file does not exist or is empty: {ConfigPath}", ConfigPath);
-        }
 
         return LoadFromFile(ConfigPath, _encryptionSecret);
     }
@@ -55,9 +50,7 @@ public sealed class ConfigStore
     public void SaveEncrypted(ConfigModel config)
     {
         if (string.IsNullOrWhiteSpace(_encryptionSecret))
-        {
             throw new InvalidOperationException("MITTWALD_SECRET is required to save encrypted config files.");
-        }
 
         var plainJson = JsonSerializer.Serialize(config, JsonOptions);
         var encryptedJson = JsonSerializer.Serialize(EncryptConfig(plainJson, _encryptionSecret), JsonOptions);
@@ -85,18 +78,13 @@ public sealed class ConfigStore
     {
         path = ExpandPath(path);
         var json = File.ReadAllText(path);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return new LoadedConfig(new ConfigModel(), ConfigFileFormat.Plain);
-        }
+        if (string.IsNullOrWhiteSpace(json)) return new LoadedConfig(new ConfigModel(), ConfigFileFormat.Plain);
 
         var encryptedConfig = TryReadEncryptedConfig(json);
         if (encryptedConfig is not null)
         {
             if (string.IsNullOrWhiteSpace(encryptionSecret))
-            {
                 throw new InvalidOperationException("MITTWALD_SECRET is required to decrypt the config file.");
-            }
 
             ValidateEncryptedHeader(encryptedConfig);
             var decryptedJson = DecryptConfig(encryptedConfig, encryptionSecret);
@@ -110,32 +98,24 @@ public sealed class ConfigStore
     {
         path = ExpandPath(path);
         var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrWhiteSpace(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
+        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
 
         var tempPath = Path.Combine(
             string.IsNullOrWhiteSpace(directory) ? Directory.GetCurrentDirectory() : directory,
             $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
 
         File.WriteAllText(tempPath, text);
-        File.Move(tempPath, path, overwrite: true);
+        File.Move(tempPath, path, true);
     }
 
     public static string ExpandPath(string path)
     {
-        if (path == "~")
-        {
-            return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        }
+        if (path == "~") return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
         if (path.StartsWith("~/", StringComparison.Ordinal))
-        {
             return Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 path[2..]);
-        }
 
         return path;
     }
@@ -143,12 +123,9 @@ public sealed class ConfigStore
     private static ConfigModel ReadConfigModel(string json)
     {
         var config = JsonSerializer.Deserialize<ConfigModel>(json, JsonOptions)
-            ?? throw new InvalidOperationException("Config file is empty or invalid.");
+                     ?? throw new InvalidOperationException("Config file is empty or invalid.");
 
-        if (config.Accounts.Count > 0)
-        {
-            return config;
-        }
+        if (config.Accounts.Count > 0) return config;
 
         return TryReadLegacyConfig(json) ?? config;
     }
@@ -159,9 +136,7 @@ public sealed class ConfigStore
         if (legacy is null
             || string.IsNullOrWhiteSpace(legacy.ApiKey)
             || legacy.Domains.Count == 0)
-        {
             return null;
-        }
 
         return new ConfigModel
         {
@@ -190,20 +165,14 @@ public sealed class ConfigStore
         try
         {
             using var document = JsonDocument.Parse(json);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                return null;
-            }
+            if (document.RootElement.ValueKind != JsonValueKind.Object) return null;
 
             var hasEnvelope = document.RootElement.TryGetProperty("format", out var format)
-                && string.Equals(format.GetString(), EncryptedFormat, StringComparison.Ordinal);
+                              && string.Equals(format.GetString(), EncryptedFormat, StringComparison.Ordinal);
             var hasLegacyEnvelope = document.RootElement.TryGetProperty("ciphertext", out _)
-                || document.RootElement.TryGetProperty("nonce", out _)
-                || document.RootElement.TryGetProperty("tag", out _);
-            if (!hasEnvelope && !hasLegacyEnvelope)
-            {
-                return null;
-            }
+                                    || document.RootElement.TryGetProperty("nonce", out _)
+                                    || document.RootElement.TryGetProperty("tag", out _);
+            if (!hasEnvelope && !hasLegacyEnvelope) return null;
 
             var encryptedConfig = JsonSerializer.Deserialize<EncryptedConfig>(json, JsonOptions);
             return encryptedConfig;
@@ -217,26 +186,19 @@ public sealed class ConfigStore
     private static void ValidateEncryptedHeader(EncryptedConfig encryptedConfig)
     {
         if (!string.Equals(encryptedConfig.Format, EncryptedFormat, StringComparison.Ordinal))
-        {
             throw new InvalidOperationException("Unsupported encrypted config format.");
-        }
 
         if (encryptedConfig.Version != 1)
-        {
             throw new InvalidOperationException($"Unsupported encrypted config version: {encryptedConfig.Version}.");
-        }
 
         if (!string.Equals(encryptedConfig.Algorithm, EncryptionAlgorithm, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException($"Unsupported encrypted config algorithm: {encryptedConfig.Algorithm}.");
-        }
+            throw new InvalidOperationException(
+                $"Unsupported encrypted config algorithm: {encryptedConfig.Algorithm}.");
 
         if (string.IsNullOrWhiteSpace(encryptedConfig.Ciphertext)
             || string.IsNullOrWhiteSpace(encryptedConfig.Nonce)
             || string.IsNullOrWhiteSpace(encryptedConfig.Tag))
-        {
             throw new InvalidOperationException("Encrypted config is missing ciphertext, nonce, or tag.");
-        }
     }
 
     private static EncryptedConfig EncryptConfig(string text, string secret)
@@ -291,9 +253,9 @@ public sealed class ConfigStore
 
     private sealed class LegacyConfigDomain
     {
-        public string Id { get; set; } = string.Empty;
-        public string Domain { get; set; } = string.Empty;
-        public string ProjectId { get; set; } = string.Empty;
+        public string Id { get; } = string.Empty;
+        public string Domain { get; } = string.Empty;
+        public string ProjectId { get; } = string.Empty;
     }
 }
 

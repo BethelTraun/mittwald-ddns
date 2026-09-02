@@ -30,7 +30,7 @@ public static class CliApplication
 
         config.AddCommand<TLoginCommand>("login")
             .WithDescription("Create a Mittwald API key.")
-            .WithExample(["login", "--v2", "--email", "user@example.com"]);
+            .WithExample("login", "--v2", "--email", "user@example.com");
 
         config.AddBranch("config", branch =>
         {
@@ -39,12 +39,12 @@ public static class CliApplication
 
             branch.AddCommand<TConfigExportCommand>("export")
                 .WithDescription("Export the current config as plain JSON.")
-                .WithExample(["config", "export"])
-                .WithExample(["config", "export", "--file", "config.json"]);
+                .WithExample("config", "export")
+                .WithExample("config", "export", "--file", "config.json");
 
             branch.AddCommand<TConfigSaveCommand>("save")
                 .WithDescription("Import and save a config file.")
-                .WithExample(["config", "save", "--file", "config.json"]);
+                .WithExample("config", "save", "--file", "config.json");
         });
     }
 }

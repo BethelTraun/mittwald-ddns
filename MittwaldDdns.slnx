@@ -1,10 +1,10 @@
 <Solution>
-  <Folder Name="/Solution Items/">
-    <File Path=".github\workflows\release.yml" />
-    <File Path=".github\workflows\test.yml" />
-    <File Path="Dockerfile" />
-    <File Path="docker-compose.yml" />
-  </Folder>
-  <Project Path="MittwaldDdns.Tests/MittwaldDdns.Tests.csproj" />
-  <Project Path="MittwaldDdns\MittwaldDdns.csproj" />
+    <Folder Name="/Solution Items/">
+        <File Path=".github\workflows\release.yml"/>
+        <File Path=".github\workflows\test.yml"/>
+        <File Path="Dockerfile"/>
+        <File Path="docker-compose.yml"/>
+    </Folder>
+    <Project Path="MittwaldDdns.Tests/MittwaldDdns.Tests.csproj"/>
+    <Project Path="MittwaldDdns\MittwaldDdns.csproj"/>
 </Solution>

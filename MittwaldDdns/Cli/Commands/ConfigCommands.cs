@@ -27,7 +27,7 @@ public sealed class ConfigCommand : AsyncCommand<ConfigSettings>
     private static ConfigStore CreateStore()
     {
         var configPath = Environment.GetEnvironmentVariable("MITTWALD_CONFIG_PATH")
-            ?? ConfigStore.DefaultConfigPath;
+                         ?? ConfigStore.DefaultConfigPath;
         var secret = Environment.GetEnvironmentVariable("MITTWALD_SECRET");
         return new ConfigStore(configPath, secret);
     }
@@ -66,7 +66,7 @@ public sealed class ConfigExportCommand : Command<ConfigExportSettings>
     private static ConfigStore CreateStore()
     {
         var configPath = Environment.GetEnvironmentVariable("MITTWALD_CONFIG_PATH")
-            ?? ConfigStore.DefaultConfigPath;
+                         ?? ConfigStore.DefaultConfigPath;
         var secret = Environment.GetEnvironmentVariable("MITTWALD_SECRET");
         return new ConfigStore(configPath, secret);
     }
@@ -89,7 +89,8 @@ public sealed class ConfigSaveCommand : Command<ConfigSaveSettings>
         try
         {
             var store = CreateStore();
-            var imported = ConfigStore.LoadFromFile(settings.File!, Environment.GetEnvironmentVariable("MITTWALD_SECRET"));
+            var imported =
+                ConfigStore.LoadFromFile(settings.File!, Environment.GetEnvironmentVariable("MITTWALD_SECRET"));
             ConfigValidator.ThrowIfInvalid(imported.Config);
             store.Save(imported.Config, imported.Format);
             CliConsole.Error.MarkupLineInterpolated($"Saved {store.ConfigPath}");
@@ -105,7 +106,7 @@ public sealed class ConfigSaveCommand : Command<ConfigSaveSettings>
     private static ConfigStore CreateStore()
     {
         var configPath = Environment.GetEnvironmentVariable("MITTWALD_CONFIG_PATH")
-            ?? ConfigStore.DefaultConfigPath;
+                         ?? ConfigStore.DefaultConfigPath;
         var secret = Environment.GetEnvironmentVariable("MITTWALD_SECRET");
         return new ConfigStore(configPath, secret);
     }
@@ -117,12 +118,10 @@ public sealed class ConfigSettings : CommandSettings
 
 public sealed class ConfigExportSettings : CommandSettings
 {
-    [CommandOption("--file <FILE>")]
-    public string? File { get; init; }
+    [CommandOption("--file <FILE>")] public string? File { get; init; }
 }
 
 public sealed class ConfigSaveSettings : CommandSettings
 {
-    [CommandOption("--file <FILE>")]
-    public string? File { get; init; }
+    [CommandOption("--file <FILE>")] public string? File { get; init; }
 }

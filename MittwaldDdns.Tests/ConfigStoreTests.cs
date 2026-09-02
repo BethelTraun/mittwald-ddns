@@ -1,5 +1,4 @@
 using System.Text.Json;
-using MittwaldDdns;
 
 namespace MittwaldDdns.Tests;
 
@@ -13,7 +12,7 @@ public sealed class ConfigStoreTests
 
         try
         {
-            new ConfigStore(path, encryptionSecret: null).SavePlain(config);
+            new ConfigStore(path, null).SavePlain(config);
 
             var json = File.ReadAllText(path);
             Assert.Contains("\"global_webhook\"", json);
@@ -21,7 +20,7 @@ public sealed class ConfigStoreTests
             Assert.Contains("\"api_key\"", json);
             Assert.Contains("\"project_id\"", json);
 
-            var loaded = ConfigStore.LoadFromFile(path, encryptionSecret: null);
+            var loaded = ConfigStore.LoadFromFile(path, null);
             Assert.Equal(ConfigFileFormat.Plain, loaded.Format);
             Assert.Empty(ConfigValidator.Validate(loaded.Config));
             Assert.Equal("example.com", loaded.Config.Accounts[0].Domains[0].Domain);
@@ -83,7 +82,7 @@ public sealed class ConfigStoreTests
         {
             ConfigStore.WriteAllTextAtomic(path, JsonSerializer.Serialize(legacy, ConfigStore.JsonOptions));
 
-            var loaded = ConfigStore.LoadFromFile(path, encryptionSecret: null);
+            var loaded = ConfigStore.LoadFromFile(path, null);
 
             Assert.Equal(ConfigFileFormat.Plain, loaded.Format);
             Assert.Equal("main", loaded.Config.Accounts[0].Name);
