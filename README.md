@@ -2,6 +2,10 @@
 
 A DDNS worker for mittwald domains supporting API v1 (login.mittwald.de) and v2 (mStudio).
 
+## Warning
+
+V2 remains untested, as our own systems still use the API v1
+
 ## Login helper
 
 Start the interactive login helper:
@@ -63,7 +67,7 @@ The config format supports multiple Mittwald API keys:
   "timeout": "00:05:00",
   "accounts": [
     {
-      "name": "main",
+      "name": "mittwald-project-uid",
       "api_key": "...",
       "api_version": null,
       "webhook": null,
@@ -79,7 +83,7 @@ The config format supports multiple Mittwald API keys:
 }
 ```
 
-For v1 accounts, the account `name` is used as the Mittwald account identifier and `domain` is the domain name. For v2 accounts, `id` is the DNS zone id. If `id` is not enough for a future API response shape, keep `project_id` set so the worker can resolve the zone by `domain`.
+For v1 accounts, `name` is the required Mittwald project/account identifier. Use the project's exact account name or numeric UID; it is not an arbitrary local label or the application-token UUID. `domain` is the domain name. For v2 accounts, `id` is the DNS zone id. If `id` is not enough for a future API response shape, keep `project_id` set so the worker can resolve the zone by `domain`.
 
 ## Docker
 
@@ -97,3 +101,7 @@ For one-off commands, pass the arguments after the service name:
 docker compose run --rm mittwald-ddns login
 docker compose run --rm mittwald-ddns config export
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -388,6 +388,16 @@ public sealed class ConfigWorkspace
 
                 return true;
             }
+            catch (HttpRequestException exception) when (apiVersion == 1 &&
+                                                         exception.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                _console.MarkupLine(Markup.Escape(
+                    $"Mittwald API v1 authenticated the API key but denied access to account '{account.Name}'. " +
+                    "Enter the Mittwald account name or numeric UID, not a local label or API-token UUID."));
+                if (!_console.Confirm("Retry with another v1 account identifier?", false)) return false;
+
+                account.Name = PromptRequired("Mittwald account name or UID:");
+            }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 _console.MarkupLine(Markup.Escape($"Mittwald API validation failed: {exception.Message}"));

@@ -81,6 +81,35 @@ public sealed class MittwaldV1Tests
         Assert.Equal([null, null], charsets);
     }
 
+    [Fact]
+    public async Task GetDnsOverviewAsync_ReportsForbiddenStatus()
+    {
+        using var httpClient = new HttpClient(new StubHandler(request =>
+        {
+            var response = request.RequestUri?.AbsolutePath switch
+            {
+                "/v1/authenticate" => JsonResponse(
+                    """{"token":"session-token","expires":"2099-01-01T00:00:00Z"}""",
+                    charset: "utf8"),
+                "/v1/accounts/account-1/dns" => JsonResponse(
+                    """{"msg":"access denied"}""",
+                    HttpStatusCode.Forbidden,
+                    "utf8"),
+                _ => new HttpResponseMessage(HttpStatusCode.NotFound)
+            };
+
+            return Task.FromResult(response);
+        }));
+
+        var client = new MittwaldV1(httpClient, "token-id:token-secret");
+
+        var exception = await Assert.ThrowsAsync<HttpRequestException>(
+            () => client.GetDnsOverviewAsync("account-1"));
+
+        Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
+        Assert.Contains("access denied", exception.Message);
+    }
+
     private static HttpResponseMessage JsonResponse(
         string json,
         HttpStatusCode statusCode = HttpStatusCode.OK,

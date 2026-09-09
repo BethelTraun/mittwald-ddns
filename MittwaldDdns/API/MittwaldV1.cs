@@ -208,7 +208,9 @@ public sealed class MittwaldV1
 
         var content = await ReadUtf8ContentAsync(response.Content, cancellationToken);
         throw new HttpRequestException(
-            $"Mittwald API v1 returned {(int)response.StatusCode} {response.ReasonPhrase}: {content}");
+            $"Mittwald API v1 returned {(int)response.StatusCode} {response.ReasonPhrase}: {content}",
+            null,
+            response.StatusCode);
     }
 }
 
