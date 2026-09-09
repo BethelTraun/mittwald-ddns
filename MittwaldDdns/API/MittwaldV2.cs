@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace MittwaldDdns.API;
@@ -25,7 +27,7 @@ public sealed class MittwaldV2
     {
         using var response = await SendAsync(HttpMethod.Get, "domains", null, cancellationToken);
 
-        return await response.Content.ReadFromJsonAsync<List<V2Domain>>(cancellationToken)
+        return await ReadJsonAsync<List<V2Domain>>(response.Content, cancellationToken)
                ?? [];
     }
 
@@ -41,7 +43,7 @@ public sealed class MittwaldV2
             null,
             cancellationToken);
 
-        return await response.Content.ReadFromJsonAsync<List<V2DnsZone>>(cancellationToken)
+        return await ReadJsonAsync<List<V2DnsZone>>(response.Content, cancellationToken)
                ?? [];
     }
 
@@ -88,7 +90,7 @@ public sealed class MittwaldV2
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, HttpStatusCode.Created, cancellationToken);
 
-        var createdToken = await response.Content.ReadFromJsonAsync<V2CreateApiTokenResponse>(cancellationToken)
+        var createdToken = await ReadJsonAsync<V2CreateApiTokenResponse>(response.Content, cancellationToken)
                            ?? throw new InvalidOperationException("Mittwald returned an empty token response.");
 
         if (string.IsNullOrWhiteSpace(createdToken.Token))
@@ -134,10 +136,23 @@ public sealed class MittwaldV2
 
         await EnsureSuccessAsync(response, cancellationToken: cancellationToken);
 
-        var token = await response.Content.ReadFromJsonAsync<V2AuthenticationResponse>(cancellationToken)
+        var token = await ReadJsonAsync<V2AuthenticationResponse>(response.Content, cancellationToken)
                     ?? throw new InvalidOperationException("Mittwald returned an empty login response.");
 
         return V2AuthenticationResult.Success(token.Token, token.Expires);
+    }
+
+    // Ignore the malformed "charset=utf8" response header returned by some API endpoints
+    private static async Task<T?> ReadJsonAsync<T>(HttpContent content, CancellationToken cancellationToken)
+    {
+        var bytes = await content.ReadAsByteArrayAsync(cancellationToken);
+        return JsonSerializer.Deserialize<T>(bytes, JsonSerializerOptions.Web);
+    }
+
+    private static async Task<string> ReadUtf8ContentAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+        var bytes = await content.ReadAsByteArrayAsync(cancellationToken);
+        return Encoding.UTF8.GetString(bytes);
     }
 
     private static async Task EnsureSuccessAsync(
@@ -148,7 +163,7 @@ public sealed class MittwaldV2
         if (response.IsSuccessStatusCode &&
             (expectedStatusCode is null || response.StatusCode == expectedStatusCode)) return;
 
-        var content = await response.Content.ReadAsStringAsync(cancellationToken);
+        var content = await ReadUtf8ContentAsync(response.Content, cancellationToken);
         throw new HttpRequestException(
             $"Mittwald API v2 returned {(int)response.StatusCode} {response.ReasonPhrase}: {content}");
     }

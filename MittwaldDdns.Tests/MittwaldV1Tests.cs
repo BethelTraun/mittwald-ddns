@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
 using MittwaldDdns.API;
 
 namespace MittwaldDdns.Tests;
@@ -23,7 +25,8 @@ public sealed class MittwaldV1Tests
             return request.RequestUri?.AbsolutePath switch
             {
                 "/v1/authenticate" => JsonResponse(
-                    """{"token":"session-token","expires":"2099-01-01T00:00:00Z"}"""),
+                    """{"token":"session-token","expires":"2099-01-01T00:00:00Z"}""",
+                    charset: "utf8"),
                 "/v1/accounts/account-1/dns/42" => new HttpResponseMessage(HttpStatusCode.OK),
                 _ => new HttpResponseMessage(HttpStatusCode.NotFound)
             };
@@ -55,10 +58,12 @@ public sealed class MittwaldV1Tests
             return request.RequestUri?.AbsolutePath switch
             {
                 "/v1/authenticate" => JsonResponse(
-                    """{"token":"session-token","expires":"2099-01-01T00:00:00Z"}"""),
+                    """{"token":"session-token","expires":"2099-01-01T00:00:00Z"}""",
+                    charset: "utf8"),
                 "/v1/authentication/tokens" => JsonResponse(
                     """{"uuid":"created-id","token":"created-secret","description":"mittwald-ddns"}""",
-                    HttpStatusCode.Created),
+                    HttpStatusCode.Created,
+                    "utf8"),
                 _ => new HttpResponseMessage(HttpStatusCode.NotFound)
             };
         }));
@@ -76,11 +81,17 @@ public sealed class MittwaldV1Tests
         Assert.Equal([null, null], charsets);
     }
 
-    private static HttpResponseMessage JsonResponse(string json, HttpStatusCode statusCode = HttpStatusCode.OK)
+    private static HttpResponseMessage JsonResponse(
+        string json,
+        HttpStatusCode statusCode = HttpStatusCode.OK,
+        string? charset = null)
     {
+        var content = new ByteArrayContent(Encoding.UTF8.GetBytes(json));
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json") { CharSet = charset };
+
         return new HttpResponseMessage(statusCode)
         {
-            Content = new StringContent(json)
+            Content = content
         };
     }
 

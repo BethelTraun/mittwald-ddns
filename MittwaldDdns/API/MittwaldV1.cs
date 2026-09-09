@@ -1,6 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -35,7 +35,7 @@ public sealed class MittwaldV1
             null,
             cancellationToken);
 
-        return await response.Content.ReadFromJsonAsync<List<V1Domain>>(cancellationToken)
+        return await ReadJsonAsync<List<V1Domain>>(response.Content, cancellationToken)
                ?? [];
     }
 
@@ -51,7 +51,7 @@ public sealed class MittwaldV1
             null,
             cancellationToken);
 
-        return await response.Content.ReadFromJsonAsync<List<V1DnsDomain>>(cancellationToken)
+        return await ReadJsonAsync<List<V1DnsDomain>>(response.Content, cancellationToken)
                ?? [];
     }
 
@@ -100,7 +100,7 @@ public sealed class MittwaldV1
         using var response = await httpClient.SendAsync(request, cancellationToken);
         await EnsureSuccessAsync(response, HttpStatusCode.Created, cancellationToken);
 
-        var createdToken = await response.Content.ReadFromJsonAsync<V1ApplicationTokenResponse>(cancellationToken)
+        var createdToken = await ReadJsonAsync<V1ApplicationTokenResponse>(response.Content, cancellationToken)
                            ?? throw new InvalidOperationException("Mittwald returned an empty token response.");
 
         if (string.IsNullOrWhiteSpace(createdToken.Uuid) || string.IsNullOrWhiteSpace(createdToken.Token))
@@ -164,7 +164,7 @@ public sealed class MittwaldV1
 
         if (response.StatusCode == HttpStatusCode.Accepted)
         {
-            var secondFactor = await response.Content.ReadFromJsonAsync<V1SecondFactorResponse>(cancellationToken)
+            var secondFactor = await ReadJsonAsync<V1SecondFactorResponse>(response.Content, cancellationToken)
                                ?? new V1SecondFactorResponse("TOTP", null);
 
             return V1AuthenticationResult.RequiresSecondFactor(secondFactor);
@@ -172,7 +172,7 @@ public sealed class MittwaldV1
 
         await EnsureSuccessAsync(response, cancellationToken: cancellationToken);
 
-        var token = await response.Content.ReadFromJsonAsync<V1AuthenticationResponse>(cancellationToken)
+        var token = await ReadJsonAsync<V1AuthenticationResponse>(response.Content, cancellationToken)
                     ?? throw new InvalidOperationException("Mittwald returned an empty login response.");
 
         return V1AuthenticationResult.Success(token.Token, token.Expires);
@@ -185,6 +185,19 @@ public sealed class MittwaldV1
         return content;
     }
 
+    // Mittwald v1 returns the invalid IANA charset name "utf8" in some JSON responses
+    private static async Task<T?> ReadJsonAsync<T>(HttpContent content, CancellationToken cancellationToken)
+    {
+        var bytes = await content.ReadAsByteArrayAsync(cancellationToken);
+        return JsonSerializer.Deserialize<T>(bytes, JsonSerializerOptions.Web);
+    }
+
+    private static async Task<string> ReadUtf8ContentAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+        var bytes = await content.ReadAsByteArrayAsync(cancellationToken);
+        return Encoding.UTF8.GetString(bytes);
+    }
+
     private static async Task EnsureSuccessAsync(
         HttpResponseMessage response,
         HttpStatusCode? expectedStatusCode = null,
@@ -193,7 +206,7 @@ public sealed class MittwaldV1
         if (response.IsSuccessStatusCode &&
             (expectedStatusCode is null || response.StatusCode == expectedStatusCode)) return;
 
-        var content = await response.Content.ReadAsStringAsync(cancellationToken);
+        var content = await ReadUtf8ContentAsync(response.Content, cancellationToken);
         throw new HttpRequestException(
             $"Mittwald API v1 returned {(int)response.StatusCode} {response.ReasonPhrase}: {content}");
     }
