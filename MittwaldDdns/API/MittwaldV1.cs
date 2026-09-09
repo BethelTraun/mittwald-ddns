@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -67,7 +68,7 @@ public sealed class MittwaldV1
         using var response = await SendAsync(
             HttpMethod.Put,
             $"accounts/{Uri.EscapeDataString(accountIdentifier)}/dns/{Uri.EscapeDataString(domainIdentifier)}",
-            new V1UpdateDnsRequest(ipAddress.ToString()),
+            V1UpdateDnsRequest.ForIpAddress(ipAddress),
             cancellationToken);
     }
 
@@ -282,7 +283,24 @@ internal sealed record V1ApplicationTokenResponse(
     string? Description);
 
 internal sealed record V1UpdateDnsRequest(
-    [property: JsonPropertyName("target")] string Target);
+    [property: JsonPropertyName("target")] V1IpTargetRecord Target)
+{
+    public static V1UpdateDnsRequest ForIpAddress(IPAddress ipAddress)
+    {
+        return ipAddress.AddressFamily switch
+        {
+            AddressFamily.InterNetwork => new V1UpdateDnsRequest(new V1IpTargetRecord(ipAddress.ToString(), null)),
+            AddressFamily.InterNetworkV6 => new V1UpdateDnsRequest(new V1IpTargetRecord(null, ipAddress.ToString())),
+            _ => throw new ArgumentException("Only IPv4 and IPv6 addresses are supported.", nameof(ipAddress))
+        };
+    }
+}
+
+internal sealed record V1IpTargetRecord(
+    [property: JsonPropertyName("a"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? A,
+    [property: JsonPropertyName("aaaa"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Aaaa);
 
 internal sealed class V1AuthenticationResult
 {

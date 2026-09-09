@@ -5,6 +5,7 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    #user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       MITTWALD_CONFIG_PATH: /config/mittwald-ddns.json
       MITTWALD_SECRET: ${MITTWALD_SECRET:-}
